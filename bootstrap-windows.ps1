@@ -1,9 +1,9 @@
-# Claude Code + DeepSeek developer bootstrap for native Windows 10 1809+ / Windows 11
-# Run in PowerShell:
-# Set-ExecutionPolicy -Scope Process Bypass -Force; .\bootstrap-windows.ps1
+# Claude Code + DeepSeek bootstrap for native Windows 10/11.
+# Run from CMD:
+# powershell -NoProfile -ExecutionPolicy Bypass -Command "irm 'https://raw.githubusercontent.com/404cn404/claude-deepseek-bootstrap/main/bootstrap-windows.ps1' | iex"
 $ErrorActionPreference = 'Stop'
 
-function Say($Message) { Write-Host "`n==> $Message" -ForegroundColor Cyan }
+function Say([string]$Message) { Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Refresh-Path {
   $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
   $user = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -12,6 +12,10 @@ function Refresh-Path {
 function Install-WingetPackage([string]$Id) {
   Say "Installing $Id"
   winget install --id $Id -e --accept-package-agreements --accept-source-agreements --silent
+}
+function Set-UserEnvironment([string]$Name, [string]$Value) {
+  [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
+  Set-Item -Path "Env:$Name" -Value $Value
 }
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -38,6 +42,18 @@ try { $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
 finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
 if ([string]::IsNullOrWhiteSpace($plainKey)) { throw 'No API key entered; stopping before creating configuration.' }
 
+$deepSeekEnv = [ordered]@{
+  ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
+  ANTHROPIC_AUTH_TOKEN = $plainKey
+  ANTHROPIC_MODEL = 'deepseek-v4-pro'
+  ANTHROPIC_DEFAULT_OPUS_MODEL = 'deepseek-v4-pro'
+  ANTHROPIC_DEFAULT_SONNET_MODEL = 'deepseek-v4-pro'
+  ANTHROPIC_DEFAULT_HAIKU_MODEL = 'deepseek-v4-flash'
+  CLAUDE_CODE_SUBAGENT_MODEL = 'deepseek-v4-flash'
+  CLAUDE_CODE_EFFORT_LEVEL = 'max'
+}
+
+# CLI configuration.
 $configDir = Join-Path $env:USERPROFILE '.claude'
 $settingsPath = Join-Path $configDir 'settings.json'
 New-Item -ItemType Directory -Path $configDir -Force | Out-Null
@@ -54,22 +70,15 @@ if ($null -eq $settings) { $settings = [PSCustomObject]@{} }
 if ($null -eq $settings.PSObject.Properties['env']) {
   $settings | Add-Member -MemberType NoteProperty -Name env -Value ([PSCustomObject]@{})
 }
-$deepSeekEnv = [ordered]@{
-  ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
-  ANTHROPIC_AUTH_TOKEN = $plainKey
-  ANTHROPIC_MODEL = 'deepseek-v4-pro'
-  ANTHROPIC_DEFAULT_OPUS_MODEL = 'deepseek-v4-pro'
-  ANTHROPIC_DEFAULT_SONNET_MODEL = 'deepseek-v4-pro'
-  ANTHROPIC_DEFAULT_HAIKU_MODEL = 'deepseek-v4-flash'
-  CLAUDE_CODE_SUBAGENT_MODEL = 'deepseek-v4-flash'
-  CLAUDE_CODE_EFFORT_LEVEL = 'max'
-}
 foreach ($item in $deepSeekEnv.GetEnumerator()) {
   if ($settings.env.PSObject.Properties[$item.Key]) { $settings.env.$($item.Key) = $item.Value }
   else { $settings.env | Add-Member -MemberType NoteProperty -Name $item.Key -Value $item.Value }
 }
 $settings | ConvertTo-Json -Depth 10 | Set-Content -Path $settingsPath -Encoding UTF8
-$plainKey = $null
+
+# GUI configuration: persist the same variables for VS Code started from the Start menu.
+Say 'Configuring Windows desktop environment for VS Code + DeepSeek'
+foreach ($item in $deepSeekEnv.GetEnumerator()) { Set-UserEnvironment $item.Key $item.Value }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE 'Projects') | Out-Null
 
@@ -91,7 +100,12 @@ uv --version
 node --version
 npm --version
 git --version
-Write-Host "`nDone. Start a project with:" -ForegroundColor Green
+$plainKey = $null
+
+Write-Host "`nDone. For VS Code launched from the Start menu, sign out/in once (or restart Windows) so it receives the new DeepSeek variables." -ForegroundColor Yellow
+Write-Host "You can use VS Code immediately by launching it from this terminal:"
+Write-Host "  code $env:USERPROFILE\Projects"
+Write-Host "Start a project with:"
 Write-Host "  mkdir $env:USERPROFILE\Projects\my-project; cd $env:USERPROFILE\Projects\my-project; claude"
-Write-Host "Optional DeepSeek smoke test (uses a small amount of API quota):" -ForegroundColor Yellow
+Write-Host 'Optional DeepSeek smoke test (uses a small amount of API quota):'
 Write-Host '  claude -p "只回复：DeepSeek API 已接通。"'
